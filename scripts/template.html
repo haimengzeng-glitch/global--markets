@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>全球主要股市五年走势</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1:      #fcfcfb;
+    --page:           #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --muted:          #898781;
+    --grid:           #e1e0d9;
+    --axis:           #c3c2b7;
+    --zero-line:      #a8a69c;
+    --border:         rgba(11,11,11,0.10);
+    --s1: #2a78d6;
+    --s2: #eb6834;
+    --s3: #1baf7a;
+    --good: #006300;
+    --critical: #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --surface-1:      #1a1a19;
+      --page:           #0d0d0d;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --muted:          #898781;
+      --grid:           #2c2c2a;
+      --axis:           #383835;
+      --zero-line:      #55534d;
+      --border:         rgba(255,255,255,0.10);
+      --s1: #3987e5;
+      --s2: #d95926;
+      --s3: #199e70;
+      --good: #0ca30c;
+      --critical: #e66767;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--page); }
+  body {
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    padding: 24px 16px 40px;
+  }
+  .viz-root { max-width: 960px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+  .subtitle { color: var(--text-secondary); font-size: 13px; margin: 0 0 20px; }
+
+  #panels { display: flex; flex-direction: column; gap: 16px; }
+
+  .panel-card {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 16px 8px;
+  }
+  .panel-header { margin-bottom: 8px; }
+  .panel-header h2 { font-size: 15px; font-weight: 600; margin: 0; }
+
+  .panel-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+    margin-bottom: 10px;
+  }
+  .mini-stat {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 12.5px;
+    color: var(--text-secondary);
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .mini-name { color: var(--text-secondary); }
+  .mini-value {
+    color: var(--text-primary);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .mini-delta { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .mini-delta.down { color: var(--critical); }
+  .mini-delta.up { color: var(--good); }
+
+  .minor-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+  }
+  .minor-grid .panel-card { padding: 14px 14px 6px; }
+  .minor-grid .panel-header h2 { font-size: 14px; }
+
+  .chart-wrap { position: relative; }
+  svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .gridline { stroke: var(--grid); stroke-width: 1; }
+  .zero-line { stroke: var(--zero-line); stroke-width: 1; }
+  .axis-line { stroke: var(--axis); stroke-width: 1; }
+  .axis-label { fill: var(--muted); font-size: 10.5px; }
+  .series-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .end-dot { stroke: var(--surface-1); stroke-width: 2; }
+  .crosshair { stroke: var(--axis); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0; }
+  .hover-dot { stroke: var(--surface-1); stroke-width: 2; opacity: 0; }
+
+  .tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 12px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    opacity: 0;
+    transition: opacity 0.08s;
+    white-space: nowrap;
+    z-index: 5;
+  }
+  .tooltip .t-date { color: var(--text-secondary); margin-bottom: 4px; }
+  .tooltip .t-row { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
+  .tooltip .t-row + .t-row { margin-top: 2px; }
+  .tooltip .t-name { display: flex; align-items: center; gap: 5px; color: var(--text-secondary); }
+  .tooltip .t-val { font-weight: 600; font-variant-numeric: tabular-nums; margin-left: 14px; }
+
+  .note { font-size: 12px; color: var(--muted); margin-top: 16px; line-height: 1.6; }
+  .footer-meta { font-size: 11px; color: var(--muted); margin-top: 6px; }
+</style>
+</head>
+<body>
+<div class="viz-root">
+  <h1>全球主要股市走势(近五年)</h1>
+  <p class="subtitle">中国、美国、台湾、日本、韩国主要股价指数,按区间涨跌幅(%)对齐比较</p>
+
+  <div id="panels"></div>
+
+  <p class="note">
+    数据来源:Yahoo Finance 聚合的各交易所官方指数行情——上证综指/深证成指(上海、深圳证券交易所)、纳斯达克综合指数(纳斯达克证券交易所)、道琼斯工业指数(标普道琼斯指数公司)、台湾加权指数(台湾证券交易所)、日经225(东京证券交易所/日本经济新闻社)、KOSPI综合指数(韩国交易所)。
+    科创50 因 Yahoo Finance 未提供该指数本身的历史行情,改用跟踪误差极小的"华夏上证科创板50ETF(588000)"作为代理。
+    各指数按图表区间起点归一化为 0% 计算涨跌幅,以便不同币种、不同点位的市场放在同一坐标轴比较。
+    上方每块统计条为 __AS_OF__ 最新报价,由 GitHub Actions 每日自动抓取更新,过程不经过 AI。
+  </p>
+  <p class="footer-meta">页面由 GitHub Actions 定时任务自动生成,最后更新于 __UPDATED_AT__。</p>
+</div>
+
+<script>
+const GROUPS = __GROUPS_JSON__;
+const SERIES_COLORS = ['var(--s1)', 'var(--s2)', 'var(--s3)'];
+
+function ns(tag) { return document.createElementNS('http://www.w3.org/2000/svg', tag); }
+
+function formatNumber(v) {
+  return v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function niceBounds(min, max) {
+  const range = (max - min) || 1;
+  const rawStep = range / 5;
+  const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const norm = rawStep / mag;
+  let step;
+  if (norm <= 1) step = 1 * mag;
+  else if (norm <= 2) step = 2 * mag;
+  else if (norm <= 5) step = 5 * mag;
+  else step = 10 * mag;
+  return { min: Math.floor(min / step) * step, max: Math.ceil(max / step) * step, step };
+}
+
+function buildPanel(group, isMinor) {
+  const card = document.createElement('div');
+  card.className = 'panel-card' + (isMinor ? ' minor' : '');
+
+  const header = document.createElement('div');
+  header.className = 'panel-header';
+  const h2 = document.createElement('h2');
+  h2.textContent = group.title;
+  header.appendChild(h2);
+  card.appendChild(header);
+
+  const statsRow = document.createElement('div');
+  statsRow.className = 'panel-stats';
+  group.series.forEach((s, i) => {
+    const stat = document.createElement('div');
+    stat.className = 'mini-stat';
+    const dir = s.deltaPct < 0 ? 'down' : 'up';
+    const arrow = s.deltaPct < 0 ? '↓' : '↑';
+    stat.innerHTML =
+      '<span class="dot" style="background:' + SERIES_COLORS[i] + '"></span>' +
+      '<span class="mini-name">' + s.name + '</span>' +
+      '<span class="mini-value">' + formatNumber(s.latest) + '</span>' +
+      '<span class="mini-delta ' + dir + '">' + arrow + Math.abs(s.deltaPct).toFixed(2) + '%</span>';
+    statsRow.appendChild(stat);
+  });
+  card.appendChild(statsRow);
+
+  const chartWrap = document.createElement('div');
+  chartWrap.className = 'chart-wrap';
+  const svg = ns('svg');
+  const W = isMinor ? 380 : 820;
+  const H = isMinor ? 220 : 300;
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+  svg.setAttribute('preserveAspectRatio', 'none');
+  chartWrap.appendChild(svg);
+  const tooltip = document.createElement('div');
+  tooltip.className = 'tooltip';
+  chartWrap.appendChild(tooltip);
+  card.appendChild(chartWrap);
+
+  renderChart(svg, tooltip, chartWrap, group, W, H);
+  return card;
+}
+
+function renderChart(svg, tooltip, wrap, group, W, H) {
+  const M = { top: 14, right: 14, bottom: 26, left: 46 };
+  const plotW = W - M.left - M.right;
+  const plotH = H - M.top - M.bottom;
+
+  const dates = group.series[0].data.map(d => d[0]);
+  const n = dates.length;
+  const allVals = group.series.flatMap(s => s.data.map(d => d[1]));
+  const { min: yMin, max: yMax, step } = niceBounds(Math.min(...allVals), Math.max(...allVals));
+
+  const x = i => M.left + (i / (n - 1)) * plotW;
+  const y = v => M.top + plotH - ((v - yMin) / (yMax - yMin)) * plotH;
+
+  for (let v = yMin; v <= yMax + step / 2; v += step) {
+    const gy = y(v);
+    const line = ns('line');
+    line.setAttribute('x1', M.left); line.setAttribute('x2', W - M.right);
+    line.setAttribute('y1', gy); line.setAttribute('y2', gy);
+    line.setAttribute('class', Math.abs(v) < step / 2 ? 'zero-line' : 'gridline');
+    svg.appendChild(line);
+    const label = ns('text');
+    label.setAttribute('x', M.left - 8); label.setAttribute('y', gy + 3.5);
+    label.setAttribute('text-anchor', 'end');
+    label.setAttribute('class', 'axis-label');
+    label.textContent = (v > 0 ? '+' : '') + Math.round(v) + '%';
+    svg.appendChild(label);
+  }
+
+  let lastYear = null;
+  dates.forEach((d, i) => {
+    const year = d.slice(0, 4);
+    if (year !== lastYear) {
+      const gx = x(i);
+      const label = ns('text');
+      label.setAttribute('x', gx); label.setAttribute('y', H - M.bottom + 16);
+      label.setAttribute('text-anchor', 'start');
+      label.setAttribute('class', 'axis-label');
+      label.textContent = year;
+      svg.appendChild(label);
+      lastYear = year;
+    }
+  });
+
+  const axisLine = ns('line');
+  axisLine.setAttribute('x1', M.left); axisLine.setAttribute('x2', W - M.right);
+  axisLine.setAttribute('y1', H - M.bottom); axisLine.setAttribute('y2', H - M.bottom);
+  axisLine.setAttribute('class', 'axis-line');
+  svg.appendChild(axisLine);
+
+  group.series.forEach((s, i) => {
+    const path = ns('path');
+    const d = s.data.map((row, idx) => (idx === 0 ? 'M' : 'L') + ' ' + x(idx).toFixed(2) + ' ' + y(row[1]).toFixed(2)).join(' ');
+    path.setAttribute('d', d);
+    path.setAttribute('class', 'series-line');
+    path.setAttribute('stroke', SERIES_COLORS[i]);
+    svg.appendChild(path);
+
+    const dot = ns('circle');
+    dot.setAttribute('cx', x(n - 1));
+    dot.setAttribute('cy', y(s.data[n - 1][1]));
+    dot.setAttribute('r', 4);
+    dot.setAttribute('fill', SERIES_COLORS[i]);
+    dot.setAttribute('class', 'end-dot');
+    svg.appendChild(dot);
+  });
+
+  const crosshair = ns('line');
+  crosshair.setAttribute('y1', M.top); crosshair.setAttribute('y2', H - M.bottom);
+  crosshair.setAttribute('class', 'crosshair');
+  svg.appendChild(crosshair);
+
+  const hoverDots = group.series.map((s, i) => {
+    const dot = ns('circle');
+    dot.setAttribute('r', 4);
+    dot.setAttribute('fill', SERIES_COLORS[i]);
+    dot.setAttribute('class', 'hover-dot');
+    svg.appendChild(dot);
+    return dot;
+  });
+
+  const overlay = ns('rect');
+  overlay.setAttribute('x', M.left); overlay.setAttribute('y', M.top);
+  overlay.setAttribute('width', plotW); overlay.setAttribute('height', plotH);
+  overlay.setAttribute('fill', 'transparent');
+  svg.appendChild(overlay);
+
+  function handleMove(evt) {
+    const rect = svg.getBoundingClientRect();
+    const scaleX = W / rect.width;
+    const mx = (evt.clientX - rect.left) * scaleX;
+    let idx = Math.round(((mx - M.left) / plotW) * (n - 1));
+    idx = Math.max(0, Math.min(n - 1, idx));
+
+    const gx = x(idx);
+    crosshair.setAttribute('x1', gx); crosshair.setAttribute('x2', gx);
+    crosshair.style.opacity = 1;
+
+    let rows = '';
+    group.series.forEach((s, i) => {
+      const val = s.data[idx][1];
+      hoverDots[i].setAttribute('cx', gx);
+      hoverDots[i].setAttribute('cy', y(val));
+      hoverDots[i].style.opacity = 1;
+      rows += '<div class="t-row"><span class="t-name"><span class="dot" style="background:' + SERIES_COLORS[i] + '"></span>' + s.name + '</span><span class="t-val">' + (val > 0 ? '+' : '') + val.toFixed(2) + '%</span></div>';
+    });
+
+    tooltip.innerHTML = '<div class="t-date">' + dates[idx] + '</div>' + rows;
+    tooltip.style.opacity = 1;
+
+    const wrapRect = wrap.getBoundingClientRect();
+    const pxX = (gx / W) * wrapRect.width;
+    let left = pxX + 14;
+    if (left + 160 > wrapRect.width) left = pxX - 160;
+    tooltip.style.left = left + 'px';
+    tooltip.style.top = '10px';
+  }
+
+  overlay.addEventListener('mousemove', handleMove);
+  overlay.addEventListener('touchmove', e => handleMove(e.touches[0]), { passive: true });
+  overlay.addEventListener('mouseleave', () => {
+    crosshair.style.opacity = 0;
+    hoverDots.forEach(d => d.style.opacity = 0);
+    tooltip.style.opacity = 0;
+  });
+}
+
+const container = document.getElementById('panels');
+const majors = GROUPS.filter(g => g.series.length > 1);
+const minors = GROUPS.filter(g => g.series.length === 1);
+
+majors.forEach(g => container.appendChild(buildPanel(g, false)));
+if (minors.length) {
+  const grid = document.createElement('div');
+  grid.className = 'minor-grid';
+  minors.forEach(g => grid.appendChild(buildPanel(g, true)));
+  container.appendChild(grid);
+}
+</script>
+</body>
+</html>
